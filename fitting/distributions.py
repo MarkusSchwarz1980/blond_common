@@ -20,6 +20,8 @@ import numpy as np
 import inspect
 import scipy.special as special_fun
 
+from . BLonD_Rc import rcBLonDparams
+
 def check_greater_zero(value, func_name):
     if value <= 0.0:
         raise ValueError(f"{func_name} needs to be positive")
@@ -85,7 +87,7 @@ class _DistributionObject(object):
      
 class Gaussian(_DistributionObject):
     
-    def __init__(self, amplitude, position, scale, **kwargs):
+    def __init__(self, amplitude, position, scale, scale_factor=None, **kwargs):
         r""" Gaussian profile function
         .. math::
             n(t) = A\,\exp(-(t-t_0)^2/2\sigma^2) \,
@@ -120,23 +122,21 @@ class Gaussian(_DistributionObject):
                 
         self.amplitude = amplitude
         self.position = position
-
-        if 'scale_factor' in kwargs:
-            scale_factor = kwargs['scale_factor']
-            if scale_factor == 'RMS':
-                self.RMS = scale
-            elif scale_factor == 'FWHM':
-                self.FWHM = scale
-            elif scale_factor == 'fourSigma_RMS':
-                self.fourSigma_RMS = scale
-            elif scale_factor == 'fourSigma_FWHM':
-                self.fourSigma_FWHM = scale
-            elif scale_factor == 'full_bunch_length':
-                raise ValueError("'full_bunch_length' argument no possible for"
-                                 +" Gaussian")
-        else:
-            self.RMS = scale  # assume that scale is RMS value
         
+        if scale_factor is None:
+            scale_factor = rcBLonDparams['distribution.scale_factor']
+        
+        if scale_factor == 'RMS':
+            self.RMS = scale
+        elif scale_factor == 'FWHM':
+            self.FWHM = scale
+        elif scale_factor == 'fourSigma_RMS':
+            self.fourSigma_RMS = scale
+        elif scale_factor == 'fourSigma_FWHM':
+            self.fourSigma_FWHM = scale
+        elif scale_factor == 'full_bunch_length':
+            raise ValueError("'full_bunch_length' argument no possible for"
+                             +" Gaussian")        
     @property
     def RMS(self):
         return self._RMS
@@ -199,7 +199,7 @@ class Gaussian(_DistributionObject):
 
 class BinomialAmplitudeN(_DistributionObject):
     
-    def __init__(self, amplitude, position, scale, mu, **kwargs):
+    def __init__(self, amplitude, position, scale, mu, scale_factor=None, **kwargs):
         r"""
         amplitude, center, scale, others
         scale_factor='RMS', 'FWHM', ...
@@ -210,21 +210,19 @@ class BinomialAmplitudeN(_DistributionObject):
         self.position = position
         self.mu = mu
         
-        if 'scale_factor' in kwargs:
-            scale_factor = kwargs['scale_factor']
-            if scale_factor == 'RMS':
-                self.RMS = scale
-            elif scale_factor == 'FWHM':
-                self.FWHM = scale
-            elif scale_factor == 'fourSigma_RMS':
-                self.fourSigma_RMS = scale
-            elif scale_factor == 'fourSigma_FWHM':
-                self.fourSigma_FWHM = scale
-            elif scale_factor == 'full_bunch_length':
-                raise ValueError("'full_bunch_length' argument no possible for"
-                                 +" Gaussian")
-        else:
-            self.full_bunch_length = scale  # assume that scale is RMS value
+        if scale_factor is None:
+            scale_factor = rcBLonDparams['distribution.scale_factor']
+
+        if scale_factor == 'RMS':
+            self.RMS = scale
+        elif scale_factor == 'FWHM':
+            self.FWHM = scale
+        elif scale_factor == 'fourSigma_RMS':
+            self.fourSigma_RMS = scale
+        elif scale_factor == 'fourSigma_FWHM':
+            self.fourSigma_FWHM = scale
+        elif scale_factor == 'full_bunch_length':
+            self.full_bunch_length = scale
 
     @property
     def full_bunch_length(self):
