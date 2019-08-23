@@ -9,8 +9,8 @@ from collections.abc import MutableMapping
 import pprint
 import re
 
-#from . BLonD_Rc_setup import _defaultBLonDRcParams
-import BLonD_Rc_setup
+from . BLonD_Rc_setup import _defaultBLonDRcParams
+#import BLonD_Rc_setup
 
 class BLonDRcParams(MutableMapping, dict):
 
