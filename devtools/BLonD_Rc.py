@@ -9,7 +9,8 @@ from collections.abc import MutableMapping
 import pprint
 import re
 
-from . BLonD_Rc_setup import _defaultBLonDRcParams
+#from . BLonD_Rc_setup import _defaultBLonDRcParams
+import BLonD_Rc_setup
 
 class BLonDRcParams(MutableMapping, dict):
 
@@ -84,8 +85,7 @@ rcBLonDparams = BLonDRcParams([(key, default) for key, (default, _) in _defaultB
 def rc(group, **kwargs):
     """
     Set the current rc params.  *group* is the grouping for the rc, e.g.,
-    for ``lines.linewidth`` the group is ``lines``, for
-    ``axes.facecolor``, the group is ``axes``, and so on.  Group may
+    for ``distribution.scale_factor`` the group is ``distribution``. Group may
     also be a list or tuple of group names, e.g., (*xtick*, *ytick*).
     *kwargs* is a dictionary attribute name/value pairs, e.g.,::
 
@@ -109,7 +109,7 @@ def rc(group, **kwargs):
             name = k
             key = '%s.%s' % (g, name)
             try:
-                rcBLonD[key] = v
+                rcBLonDparams[key] = v
             except KeyError:
                 raise KeyError(('Unrecognized key "%s" for group "%s" and '
                                 'name "%s"') % (key, g, name))

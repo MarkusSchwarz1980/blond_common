@@ -20,7 +20,7 @@ import numpy as np
 import inspect
 import scipy.special as special_fun
 
-from . BLonD_Rc import rcBLonDparams
+from blond_common.devtools.BLonD_Rc import rcBLonDparams
 
 def check_greater_zero(value, func_name):
     if value <= 0.0:
@@ -136,18 +136,38 @@ class Gaussian(_DistributionObject):
             self.fourSigma_FWHM = scale
         elif scale_factor == 'full_bunch_length':
             raise ValueError("'full_bunch_length' argument no possible for"
-                             +" Gaussian")        
+                             +" Gaussian")    
+    
+    def _computeBunchlenghtsFromRMS(self,RMS):
+        FWHM = 2*np.sqrt(np.log(4)) * RMS
+        # return order is RMS, FWHM, fourSigma_RMS, fourSigma_FWHM, full_bunch_length
+        return RMS, FWHM, 4*RMS, 2/np.sqrt(np.log(4)) * FWHM, np.inf
+    
+    
+    def _computeBunchlengths(self, value, scale_factor):
+        if scale_factor == 'RMS':
+            bls = self._computeBunchlenghtsFromRMS(value)
+        elif scale_factor == 'FWHM':
+            bls = self._computeBunchlenghtsFromRMS(value / (2*np.sqrt(np.log(4))))
+        elif scale_factor == 'fourSigma_RMS':
+            bls = self._computeBunchlenghtsFromRMS(value/4)
+        elif scale_factor == 'fourSigma_FWHM':
+            bls = self._computeBunchlenghtsFromRMS(value/4)
+        return bls
+            
     @property
     def RMS(self):
         return self._RMS
     @RMS.setter
     def RMS(self, value):
         check_greater_zero(value, inspect.currentframe().f_code.co_name)
-        self._RMS = value
-        self._FWHM = 2*np.sqrt(np.log(4)) * value
-        self._fourSigma_RMS = 4 * value
-        self._fourSigma_FWHM = 2/np.sqrt(np.log(4)) * self._FWHM
-        self._full_bunch_length = np.inf
+        self._RMS, self._FWHM, self._fourSigma_RMS, self._fourSigma_FWHM,\
+        self._full_bunch_length = self._computeBunchlenghtsFromRMS(value)
+#        self._RMS = value
+#        self._FWHM = 2*np.sqrt(np.log(4)) * value
+#        self._fourSigma_RMS = 4 * value
+#        self._fourSigma_FWHM = 2/np.sqrt(np.log(4)) * self._FWHM
+#        self._full_bunch_length = np.inf
         
     @property
     def FWHM(self):
@@ -180,10 +200,23 @@ class Gaussian(_DistributionObject):
     def full_bunch_length(self, value):
         self._full_bunch_length = np.inf
     
-    def profile(self, x):
+    def profile(self, x, *args, **kwargs):
         """ Returns the Gaussian profile at x
         """
-        return self.amplitude * np.exp(-0.5*(x-self.position)**2/self.RMS**2)
+        if len(args) == 0:
+            return self.amplitude * np.exp(-0.5*(x-self.position)**2/self.RMS**2)
+        else:
+            amplitude = args[0]
+            position = args[1]
+            
+            if 'scale_factor' not in kwargs:
+                scale_factor = rcBLonDparams['distribution.scale_factor']
+            else:
+                scale_factor = kwargs['scale_factor']
+
+            RMS = self._computeBunchlengths(args[2], scale_factor)[0]  # first return value is RMS
+            
+            return amplitude * np.exp(-0.5*(x-position)**2/RMS**2)
 
     def spectrum(self, f):
         """ Returns the Gaussian spectrum at frequency f

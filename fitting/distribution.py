@@ -22,8 +22,7 @@ from scipy.optimize import minimize, curve_fit
 import warnings
 
 # Cedar imports
-from . import distribution_functions
-
+from . import distribution_functions, distributions
 
 class FitOptions():
 
@@ -334,6 +333,33 @@ def gaussianFit(time, bunch, fitOpt=None, plotOpt=None):
 
     return bunchPosition, bunchLength, extraParameters
 
+
+def gaussianFit2(time, bunch, fitOpt=None, plotOpt=None):
+    '''
+    Fit the profile with a gaussian function
+    '''
+
+    if fitOpt is None:
+        fitOpt = FitOptions()
+
+    if fitOpt.fitInitialParameters is None:
+        maxProfile = np.max(bunch)
+        fitOptFWHM = FitOptions(bunchLengthFactor='gaussian')
+        fitOpt.fitInitialParameters = np.array(
+            [maxProfile-np.min(bunch),
+             np.mean(time[bunch == maxProfile]),
+             FWHM(time,
+                  bunch,
+                  level=0.5,
+                  fitOpt=fitOptFWHM,
+                  plotOpt=None)[1]/4.])  # 1 sigma !!
+
+    fitDistribtion = distributions.Gaussian(*fitOpt.fitInitialParameters)
+    
+    fitParameters = _lineDensityFit2(
+        time, bunch, fitDistribtion.profile, fitOpt=fitOpt, plotOpt=plotOpt)
+
+    return fitParameters
 
 def generalizedGaussianFit(time, bunch, fitOpt=None, plotOpt=None):
     '''
@@ -655,6 +681,82 @@ def _lineDensityFit(time, bunch, profileFitFunction, fitOpt=None,
 
     return bunchPosition, bunchLength, extraParameters
 
+def _lineDensityFit2(time, bunch, profileFitFunction, fitOpt=None,
+                     plotOpt=None):
+    '''
+    Fit the profile with the profileFitFunction
+    '''
+
+    if fitOpt is None:
+        fitOpt = FitOptions()
+
+    profileToFit = bunch-np.mean(bunch[0:fitOpt.nPointsNoise])
+
+    # Rescaling so that the fit parameters are around 1
+    rescaleFactorX = 1/(time[-1]-time[0])
+    rescaleFactorY = 1/np.max(profileToFit)
+
+    fitInitialParameters = np.array(fitOpt.fitInitialParameters)
+
+    fitInitialParameters[0] *= rescaleFactorY
+    fitInitialParameters[1] -= time[0]
+    fitInitialParameters[1] *= rescaleFactorX
+    fitInitialParameters[2] *= rescaleFactorX
+
+    # Fitting
+    if fitOpt.fittingRoutine == 'curve_fit':
+
+        extraParameters = curve_fit(
+            profileFitFunction,
+            (time-time[0])*rescaleFactorX,
+            profileToFit*rescaleFactorY,
+            p0=fitInitialParameters)[0]
+
+    elif fitOpt.fittingRoutine == 'minimize':
+
+        if fitOpt.residualFunction is None:
+            fitOpt.residualFunction = _leastSquareResidualFunction
+
+        extraParameters = minimize(
+            fitOpt.residualFunction,
+            fitInitialParameters,
+            args=(profileFitFunction,
+                  (time-time[0])*rescaleFactorX,
+                  profileToFit*rescaleFactorY),
+            bounds=fitOpt.bounds,
+            method=fitOpt.method,
+            options=fitOpt.options)['x']
+
+    # Abs on fit parameters
+    extraParameters = np.abs(extraParameters)
+
+    # Rescaling back to the original dimensions
+    extraParameters[0] /= rescaleFactorY
+    extraParameters[1] /= rescaleFactorX
+    extraParameters[1] += time[0]
+    extraParameters[2] /= rescaleFactorX
+
+    if plotOpt is not None:
+
+        plt.figure(plotOpt.figname)
+        if plotOpt.clf:
+            plt.clf()
+        plt.plot(time,
+                 profileToFit, label='Data')
+        plt.plot(time,
+                 profileFitFunction(time, *fitOpt.fitInitialParameters),
+                 label='Initial guess')
+        plt.plot(time,
+                 profileFitFunction(time, *extraParameters),
+                 label='Fit')
+        if plotOpt.legend:
+            plt.legend(loc='best')
+        if plotOpt.interactive:
+            plt.pause(0.00001)
+        else:
+            plt.show()
+
+    return extraParameters
 
 def _leastSquareResidualFunction(fitParameters, *fittingArgList):
     '''
