@@ -344,17 +344,13 @@ def gaussianFit2(time, bunch, fitOpt=None, plotOpt=None):
 
     if fitOpt.fitInitialParameters is None:
         maxProfile = np.max(bunch)
-        fitOptFWHM = FitOptions(bunchLengthFactor='gaussian')
         fitOpt.fitInitialParameters = np.array(
             [maxProfile-np.min(bunch),
              np.mean(time[bunch == maxProfile]),
-             FWHM(time,
-                  bunch,
-                  level=0.5,
-                  fitOpt=fitOptFWHM,
-                  plotOpt=None)[1]/4.])  # 1 sigma !!
+             FWHM(time, bunch, level=0.5)[1]])
 
-    fitDistribtion = distributions.Gaussian(*fitOpt.fitInitialParameters)
+    fitDistribtion = distributions.Gaussian(*fitOpt.fitInitialParameters,
+                                            scale_factor='FWHM')
     
     fitParameters = _lineDensityFit2(
         time, bunch, fitDistribtion.profile, fitOpt=fitOpt, plotOpt=plotOpt)

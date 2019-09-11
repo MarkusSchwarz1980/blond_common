@@ -17,9 +17,9 @@ time_array = np.arange(0, 25e-9, 0.1e-9)
 
 amplitude = 1.
 position = 13e-9
-length = 2e-9  # RMS
-FWHM = 2*np.sqrt(np.log(4))*length
-initial_params_gauss = [amplitude, position, length]
+lengthParameter = 2e-9  # RMS by default
+FWHM = 2*np.sqrt(np.log(4))*lengthParameter
+initial_params_gauss = [amplitude, position, lengthParameter]
 
 # create a Gaussian distribution object with these parmeters
 gaussian_dist = Gaussian(*initial_params_gauss)
@@ -29,14 +29,14 @@ gaussian_profile = gaussian_dist.profile(time_array)
 
 plt.figure('Gaussian profiles', clear=True)
 plt.grid()
-plt.plot(time_array, gaussian_profile, label='input')
+plt.plot(time_array, gaussian_profile, label='lengthParameter=RMS')
 
 # compare input RMS and FWHM
-print('input length and RMS: ', length, gaussian_dist.RMS)
+print('input length and RMS: ', lengthParameter, gaussian_dist.RMS)
 print('resulting FWHM and FWHM: ', FWHM, gaussian_dist.FWHM)
 
 # 
-print('amplitude at position where profile is a half maximum: ',
+print('profile at position where profile is a half maximum: ',
       amplitude/2, gaussian_dist.profile(position+FWHM/2))
 
 # fit profile to a Gaussian
@@ -57,7 +57,8 @@ blondrc.rc('distribution', **{'scale_factor':'FWHM'})
 gaussian_dist2 = Gaussian(*initial_params_gauss)
 gaussian_profile2 = gaussian_dist2.profile(time_array)
 
-print('length parameter is now interpreted as FWHM:', length, gaussian_dist2.FWHM)
+print('length parameter is now interpreted as FWHM:', lengthParameter,
+      gaussian_dist2.FWHM)
 plt.plot(time_array, gaussian_profile2, '--', label='FWHM')
 
 # a fit to the original profile now returns FWHM in the 3rd element
