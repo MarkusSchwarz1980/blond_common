@@ -9,7 +9,7 @@ import numpy as np
 import matplotlib.pyplot as plt
 
 from blond_common.fitting.distributions import Gaussian
-from blond_common.fitting.distribution import gaussianFit, gaussianFit2
+from blond_common.fitting.distribution import gaussianFit2
 
 import blond_common.devtools.BLonD_Rc as blondrc
 
