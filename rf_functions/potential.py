@@ -19,6 +19,9 @@ import numpy as np
 import scipy.interpolate as interp
 from ..maths.calculus import integ_cubic, deriv_cubic, minmax_location_cubic
 
+# BLonD_Common imports
+from ..devtools import exceptions as excpt
+
 
 def rf_voltage_generation(n_points, t_rev, voltage, harmonic_number,
                           phi_offset, time_bounds=None):
@@ -113,13 +116,16 @@ def rf_potential_generation_cubic(time_array, voltage_array, eta_0, charge,
 # Defining a routine to locate potential wells and inner separatrices
 def find_potential_wells_cubic(time_array_full, potential_well_full,
                                relative_max_val_precision_limit=1e-6,
-                               mest=10, verbose=False):
+                               mest=10, edge_is_max=False,
+                               verbose=False):
 
     potwell_max_locs = []
     potwell_max_vals = []
     potwell_inner_max = []
     potwell_min_locs = []
     potwell_min_vals = []
+
+    time_resolution = time_array_full[1]-time_array_full[0]
 
     tck = interp.splrep(time_array_full, potential_well_full)
 
@@ -133,6 +139,29 @@ def find_potential_wells_cubic(time_array_full, potential_well_full,
     min_val = min_max_results[1][0]
     max_val = min_max_results[1][1]
 
+    most_left_min_pos = np.min(min_pos)
+    most_right_min_pos = np.max(min_pos)
+    most_left_max_pos = np.min(max_pos)
+    most_right_max_pos = np.max(max_pos)
+
+    left_edge_is_max = False
+    right_edge_is_max = False
+    if edge_is_max:
+        # Adding the left or right edge to the list of max
+        # The addition is done only if there is a min between the closest
+        # max to the left/right edge and the actual edge
+        # (avoid consecutive maxes)
+        if potential_well_full[0] > potential_well_full[-1]:
+            if most_left_min_pos > most_left_max_pos:
+                max_pos = np.insert(max_pos, 0, time_array_full[0])
+                max_val = np.insert(max_val, 0, potential_well_full[0])
+                left_edge_is_max = True
+        else:
+            if most_right_min_pos < most_right_max_pos:
+                max_pos = np.append(max_pos, time_array_full[-1])
+                max_val = np.append(max_val, potential_well_full[-1])
+                right_edge_is_max = True
+
     for index_max in range(len(max_val)):
 
         # Setting a max
@@ -144,246 +173,299 @@ def find_potential_wells_cubic(time_array_full, potential_well_full,
         inner_sep_max_right = np.nan
 
         # Checking left
-        if index_max == 0:
-            # This is the most left max
-            pass
-        else:
-            # This is a right max, checking for the left counterparts
-            for index_left in range(1, index_max+1):
+        # This is a right max, checking for the left counterparts
+
+        for index_left in range(index_max+2):
+            if left_edge_is_max and (index_max == 0):
+                # The left edge was manually added as a maximum, no check
+                # to the left
+                break
+
+            if (index_left == 0) and (index_max == 0):
+                # This is the most left max
+                if most_left_min_pos > max_pos[index_max]:
+                    break
+                else:
+                    left_max_val = potential_well_full[0]
+                    left_max_pos = time_array_full[0]
+            elif (index_left == 1) and (index_max == 0):
+                # This indexes set is there to avoid checking the left edge
+                # twice while one most left max
+                continue
+            elif (index_left == 0) and (index_max != 0):
+                # This indexes set corresponds to the same max
+                continue
+
+            elif (index_left == (index_max+1)) and (index_max != 0):
+
+                # No more max on the left, checking edge
+                left_max_val = potential_well_full[0]
+                left_max_pos = time_array_full[0]
+            else:
                 left_max_val = max_val[index_max-index_left]
                 left_max_pos = max_pos[index_max-index_left]
 
-                right_pos = present_max_pos
-                right_val = present_max_val
+            right_pos = present_max_pos
+            right_val = present_max_val
 
-                if np.isclose(left_max_val, present_max_val,
-                              rtol=relative_max_val_precision_limit, atol=0):
-                    # The left max is identical to the present max, a pot. well
-                    # is found
-                    left_pos = left_max_pos
-                    left_val = left_max_val
+            if np.isclose(left_max_val, present_max_val,
+                          rtol=relative_max_val_precision_limit, atol=0):
+                # The left max is identical to the present max, a pot. well
+                # is found
+                left_pos = left_max_pos
+                left_val = left_max_val
 
-                    if [left_pos, right_pos] not in potwell_max_locs:
-                        potwell_max_locs.append([left_pos, right_pos])
-                        potwell_max_vals.append([left_val, right_val])
+                if [left_pos, right_pos] not in potwell_max_locs:
+                    potwell_max_locs.append([left_pos, right_pos])
+                    potwell_max_vals.append([left_val, right_val])
 
-                        if np.isnan(inner_sep_max_left):
-                            potwell_inner_max.append(np.nan)
-                            potwell_min_locs.append(
-                                    float(min_pos[(min_pos > left_pos) *
-                                                  (min_pos < right_pos)]))
-                            potwell_min_vals.append(
-                                    float(min_val[(min_pos > left_pos) *
-                                                  (min_pos < right_pos)]))
+                    if np.isnan(inner_sep_max_left):
+                        potwell_inner_max.append(np.nan)
+                        potwell_min_locs.append(
+                                float(min_pos[(min_pos > left_pos) *
+                                              (min_pos < right_pos)]))
+                        potwell_min_vals.append(
+                                float(min_val[(min_pos > left_pos) *
+                                              (min_pos < right_pos)]))
 
-                        else:
-                            potwell_inner_max.append(
-                                    float(inner_sep_max_left))
-                            potwell_min_locs.append(np.nan)
-                            potwell_min_vals.append(np.nan)
-
-                        if verbose:
-                            print('+L1 - IMAX '+str(index_max)+' - ILEFT ' +
-                                  str(index_left))
-                            print([left_pos, right_pos], inner_sep_max_left)
                     else:
-                        pass
-                        if verbose:
-                            print('=L1 - IMAX '+str(index_max)+' - ILEFT ' +
-                                  str(index_left))
-
-                    # Breaking the loop
-                    break
-
-                elif left_max_val < present_max_val:
-                    # The left max is smaller than the present max, this
-                    # means that there is an inner separatrix
-
-                    inner_sep_max_left = np.nanmax([
-                        inner_sep_max_left, left_max_val])
+                        potwell_inner_max.append(
+                                float(inner_sep_max_left))
+                        potwell_min_locs.append(np.nan)
+                        potwell_min_vals.append(np.nan)
 
                     if verbose:
-                        print('L2 - IMAX '+str(index_max)+' - ILEFT ' +
+                        print('+L1 - IMAX '+str(index_max)+' - ILEFT ' +
                               str(index_left))
-                        print (inner_sep_max_left)
+                        print([left_pos, right_pos], inner_sep_max_left)
+                else:
+                    pass
+                    if verbose:
+                        print('=L1 - IMAX '+str(index_max)+' - ILEFT ' +
+                              str(index_left))
 
-                elif left_max_val > present_max_val:
-                    # The left max is higher than the present max, finding
-                    # the intersection and breaking the loop
+                # Breaking the loop
+                break
 
-                    indexes_find_root = np.where((tck[0] >= left_max_pos) *
-                                                 (tck[0] <= present_max_pos))
+            elif left_max_val < present_max_val:
+                # The left max is smaller than the present max, this
+                # means that there is an inner separatrix
 
-                    tck_adjusted = (
-                        tck[0][indexes_find_root],
-                        (tck[1]-present_max_val)[indexes_find_root],
-                        tck[2])
+                inner_sep_max_left = np.nanmax([
+                    inner_sep_max_left, left_max_val])
 
-                    potential_well_roots = interp.sproot(tck_adjusted,
-                                                         mest=mest)
+                if verbose:
+                    print('L2 - IMAX '+str(index_max)+' - ILEFT ' +
+                          str(index_left))
+                    print (inner_sep_max_left)
 
-                    # Breaking if root finding fails (bucket too small or
-                    # precision param too fine)
-                    if len(potential_well_roots) == 0:
-                        print('FL')
-                        break
+            elif left_max_val > present_max_val:
+                # The left max is higher than the present max, finding
+                # the intersection and breaking the loop
 
-                    left_pos = np.max(potential_well_roots)
-                    left_val = present_max_val
+                indexes_find_root = np.where(
+                    (tck[0] >= (left_max_pos-3*time_resolution)) *
+                    (tck[0] < present_max_pos))
 
-                    if [left_pos, right_pos] not in potwell_max_locs:
-                        potwell_max_locs.append([left_pos, right_pos])
-                        potwell_max_vals.append([left_val, right_val])
+                tck_adjusted = (
+                    tck[0][indexes_find_root],
+                    (tck[1]-present_max_val)[indexes_find_root],
+                    tck[2])
 
-                        if np.isnan(inner_sep_max_left):
-                            potwell_inner_max.append(np.nan)
-                            potwell_min_locs.append(
-                                    float(min_pos[(min_pos > left_pos) *
-                                                  (min_pos < right_pos)]))
-                            potwell_min_vals.append(
-                                    float(min_val[(min_pos > left_pos) *
-                                                  (min_pos < right_pos)]))
+                potential_well_roots = interp.sproot(tck_adjusted,
+                                                     mest=mest)
 
-                        else:
-                            potwell_inner_max.append(
-                                    float(inner_sep_max_left))
-                            potwell_min_locs.append(np.nan)
-                            potwell_min_vals.append(np.nan)
-
-                        if verbose:
-                            print('+L3 - IMAX '+str(index_max)+' - ILEFT ' +
-                                  str(index_left))
-                            print([left_pos, right_pos], inner_sep_max_left)
-                    else:
-                        pass
-                        if verbose:
-                            print('=L3 - IMAX '+str(index_max)+' - ILEFT ' +
-                                  str(index_left))
-
-                    # Beaking the loop
+                # Breaking if root finding fails (bucket too small or
+                # precision param too fine)
+                if len(potential_well_roots) == 0:
+                    print('Warning: could not intersect potential well ' +
+                          'on the left! ' +
+                          'Try lowering relative_max_val_precision_limit')
                     break
 
+                left_pos = np.max(potential_well_roots)
+                left_val = present_max_val
+
+                if [left_pos, right_pos] not in potwell_max_locs:
+                    potwell_max_locs.append([left_pos, right_pos])
+                    potwell_max_vals.append([left_val, right_val])
+
+                    if np.isnan(inner_sep_max_left):
+                        potwell_inner_max.append(np.nan)
+                        potwell_min_locs.append(
+                                float(min_pos[(min_pos > left_pos) *
+                                              (min_pos < right_pos)]))
+                        potwell_min_vals.append(
+                                float(min_val[(min_pos > left_pos) *
+                                              (min_pos < right_pos)]))
+
+                    else:
+                        potwell_inner_max.append(
+                                float(inner_sep_max_left))
+                        potwell_min_locs.append(np.nan)
+                        potwell_min_vals.append(np.nan)
+
+                    if verbose:
+                        print('+L3 - IMAX '+str(index_max)+' - ILEFT ' +
+                              str(index_left))
+                        print([left_pos, right_pos], inner_sep_max_left)
+                else:
+                    pass
+                    if verbose:
+                        print('=L3 - IMAX '+str(index_max)+' - ILEFT ' +
+                              str(index_left))
+
+                # Beaking the loop
+                break
+
         # Checking right:
-        if index_max == len(max_val)-1:
-            # This is the most right max
-            pass
-        else:
-            # This is a left max, checking for the right counterpart
-            for index_right in range(1, len(max_val)-index_max):
+        # This is a left max, checking for the right counterpart
+
+        for index_right in range(len(max_val)-index_max+1):
+            if right_edge_is_max and (index_max == (len(max_val)-1)):
+                # The right edge was manually added as a maximum, no check
+                # to the right
+                break
+
+            if (index_right == 0) and (index_max == (len(max_val)-1)):
+                # This is the most right max
+                if most_right_min_pos < max_pos[index_max]:
+                    break
+                else:
+                    right_max_val = potential_well_full[-1]
+                    right_max_pos = time_array_full[-1]
+            elif (index_right == 1) and (index_max == (len(max_val)-1)):
+                # This indexes set is there to avoid checking the right edge
+                # twice while one most right max
+                continue
+            elif (index_right == 0) and (index_max != (len(max_val)-1)):
+                # This indexes set corresponds to the same max
+                continue
+
+            elif (index_right == (len(max_val)-index_max)) and \
+                    (index_max != (len(max_val)-1)):
+
+                # No more max on the right, checking edge
+                right_max_val = potential_well_full[-1]
+                right_max_pos = time_array_full[-1]
+            else:
                 right_max_val = max_val[index_max+index_right]
                 right_max_pos = max_pos[index_max+index_right]
 
-                left_pos = present_max_pos
-                left_val = present_max_val
+            left_pos = present_max_pos
+            left_val = present_max_val
 
-                if np.isclose(right_max_val, present_max_val,
-                              rtol=relative_max_val_precision_limit, atol=0):
-                    # The right max is identical to the present max, a pot.
-                    # well is found
-                    right_pos = right_max_pos
-                    right_val = right_max_val
+            if np.isclose(right_max_val, present_max_val,
+                          rtol=relative_max_val_precision_limit, atol=0):
+                # The right max is identical to the present max, a pot.
+                # well is found
+                right_pos = right_max_pos
+                right_val = right_max_val
 
-                    if [left_pos, right_pos] not in potwell_max_locs:
-                        potwell_max_locs.append([left_pos, right_pos])
-                        potwell_max_vals.append([left_val, right_val])
+                if [left_pos, right_pos] not in potwell_max_locs:
+                    potwell_max_locs.append([left_pos, right_pos])
+                    potwell_max_vals.append([left_val, right_val])
 
-                        if np.isnan(inner_sep_max_right):
-                            potwell_inner_max.append(np.nan)
-                            potwell_min_locs.append(
-                                    float(min_pos[(min_pos > left_pos) *
-                                                  (min_pos < right_pos)]))
-                            potwell_min_vals.append(
-                                    float(min_val[(min_pos > left_pos) *
-                                                  (min_pos < right_pos)]))
+                    if np.isnan(inner_sep_max_right):
+                        potwell_inner_max.append(np.nan)
+                        potwell_min_locs.append(
+                                float(min_pos[(min_pos > left_pos) *
+                                              (min_pos < right_pos)]))
+                        potwell_min_vals.append(
+                                float(min_val[(min_pos > left_pos) *
+                                              (min_pos < right_pos)]))
 
-                        else:
-                            potwell_inner_max.append(
-                                    float(inner_sep_max_right))
-                            potwell_min_locs.append(np.nan)
-                            potwell_min_vals.append(np.nan)
-
-                        if verbose:
-                            print('+R1 - IMAX '+str(index_max)+' - IRIGHT ' +
-                                  str(index_right))
-                            print([left_pos, right_pos], inner_sep_max_right)
                     else:
-                        pass
-                        if verbose:
-                            print('=R1 - IMAX '+str(index_max)+' - IRIGHT ' +
-                                  str(index_right))
-
-                    # Breaking the loop
-                    break
-
-                elif right_max_val < present_max_val:
-                    # The right max is smaller than the present max, this
-                    # means that there is an inner separatrix
-
-                    inner_sep_max_right = np.nanmax([
-                        inner_sep_max_right, right_max_val])
+                        potwell_inner_max.append(
+                                float(inner_sep_max_right))
+                        potwell_min_locs.append(np.nan)
+                        potwell_min_vals.append(np.nan)
 
                     if verbose:
-                        print('R2 - IMAX '+str(index_max)+' - IRIGHT ' +
+                        print('+R1 - IMAX '+str(index_max)+' - IRIGHT ' +
                               str(index_right))
-                        print(inner_sep_max_right)
+                        print([left_pos, right_pos], inner_sep_max_right)
+                else:
+                    pass
+                    if verbose:
+                        print('=R1 - IMAX '+str(index_max)+' - IRIGHT ' +
+                              str(index_right))
 
-                elif right_max_val > present_max_val:
-                    # The right max is higher than the present max, finding
-                    # the intersection and breaking the loop
+                # Breaking the loop
+                break
 
-                    indexes_find_root = np.where(
-                        (tck[0] >= present_max_pos) *
-                        (tck[0] <= right_max_pos))
+            elif right_max_val < present_max_val:
+                # The right max is smaller than the present max, this
+                # means that there is an inner separatrix
 
-                    tck_adjusted = (
-                        tck[0][indexes_find_root],
-                        (tck[1]-present_max_val)[indexes_find_root],
-                        tck[2])
-                    potential_well_roots = interp.sproot(tck_adjusted,
-                                                         mest=mest)
+                inner_sep_max_right = np.nanmax([
+                    inner_sep_max_right, right_max_val])
 
-                    # Breaking if root finding fails (bucket too small or
-                    # precision param too fine)
-                    if len(potential_well_roots) == 0:
-                        print('FR')
-                        break
+                if verbose:
+                    print('R2 - IMAX '+str(index_max)+' - IRIGHT ' +
+                          str(index_right))
+                    print(inner_sep_max_right)
 
-                    right_pos = np.min(potential_well_roots)
-                    right_val = present_max_val
+            elif right_max_val > present_max_val:
+                # The right max is higher than the present max, finding
+                # the intersection and breaking the loop
 
-                    if [left_pos, right_pos] not in potwell_max_locs:
-                        potwell_max_locs.append([left_pos, right_pos])
-                        potwell_max_vals.append([left_val, right_val])
+                indexes_find_root = np.where(
+                    (tck[0] > present_max_pos) *
+                    (tck[0] <= (right_max_pos+3*time_resolution)))
 
-                        if np.isnan(inner_sep_max_right):
-                            potwell_inner_max.append(np.nan)
-                            potwell_min_locs.append(
-                                    float(min_pos[(min_pos > left_pos) *
-                                                  (min_pos < right_pos)]))
-                            potwell_min_vals.append(
-                                    float(min_val[(min_pos > left_pos) *
-                                                  (min_pos < right_pos)]))
+                tck_adjusted = (
+                    tck[0][indexes_find_root],
+                    (tck[1]-present_max_val)[indexes_find_root],
+                    tck[2])
 
-                        else:
-                            potwell_inner_max.append(
-                                    float(inner_sep_max_right))
-                            potwell_min_locs.append(np.nan)
-                            potwell_min_vals.append(np.nan)
+                potential_well_roots = interp.sproot(tck_adjusted,
+                                                     mest=mest)
 
-                        if verbose:
-                            print('+R3 - IMAX '+str(index_max)+' - IRIGHT ' +
-                                  str(index_right))
-                            print([left_pos, right_pos],
-                                  inner_sep_max_right)
+                # Breaking if root finding fails (bucket too small or
+                # precision param too fine)
+                if len(potential_well_roots) == 0:
+                    print('Warning: could not intersect potential well ' +
+                          'on the right! ' +
+                          'Try lowering relative_max_val_precision_limit')
+                    break
+
+                right_pos = np.min(potential_well_roots)
+                right_val = present_max_val
+
+                if [left_pos, right_pos] not in potwell_max_locs:
+                    potwell_max_locs.append([left_pos, right_pos])
+                    potwell_max_vals.append([left_val, right_val])
+
+                    if np.isnan(inner_sep_max_right):
+                        potwell_inner_max.append(np.nan)
+                        potwell_min_locs.append(
+                                float(min_pos[(min_pos > left_pos) *
+                                              (min_pos < right_pos)]))
+                        potwell_min_vals.append(
+                                float(min_val[(min_pos > left_pos) *
+                                              (min_pos < right_pos)]))
 
                     else:
-                        pass
-                        if verbose:
-                            print('=R3 - IMAX '+str(index_max)+' - IRIGHT ' +
-                                  str(index_right))
+                        potwell_inner_max.append(
+                                float(inner_sep_max_right))
+                        potwell_min_locs.append(np.nan)
+                        potwell_min_vals.append(np.nan)
 
-                    # Beaking the loop
-                    break
+                    if verbose:
+                        print('+R3 - IMAX '+str(index_max)+' - IRIGHT ' +
+                              str(index_right))
+                        print([left_pos, right_pos],
+                              inner_sep_max_right)
+
+                else:
+                    pass
+                    if verbose:
+                        print('=R3 - IMAX '+str(index_max)+' - IRIGHT ' +
+                              str(index_right))
+
+                # Beaking the loop
+                break
 
     return (potwell_max_locs, potwell_max_vals,
             potwell_inner_max, potwell_min_locs,
@@ -416,6 +498,33 @@ def potential_well_cut_cubic(time_array_full, potential_well_full,
         potential_well_list.append(out)
 
     return time_array_list, potential_well_list
+
+
+def sort_potential_wells(time_list, well_list, by = 't_start'):
+
+    if not hasattr(time_list[0], '__iter__'):
+        time_list = (time_list,)
+        well_list = (well_list,)
+    
+    if by == 't_start':
+        order = [a for a,b in sorted(enumerate(time_list), 
+                                 key = lambda itt : itt[1][0])]
+    elif by == 'size':
+        order = [a for a,b in sorted(enumerate(time_list), 
+                                 key = lambda itt : itt[1][0] - itt[1][-1])]
+    else:
+        raise AttributeError("no sorting option for " + str(by))
+    
+    retTimes = [time_list[i] for i in order]
+    retWells = [well_list[i] for i in order]
+    
+    return retTimes, retWells
+
+
+def potential_to_hamiltonian(time_array, potential_array, beta, energy, eta):
+    
+    HVal = np.max(potential_array)
+    return np.abs((HVal - potential_array)*2*beta**2*energy/eta)
 
 
 def trajectory_area_cubic(time_array, potential_array, eta_0, beta_rel,
@@ -536,31 +645,29 @@ def synchrotron_frequency_cubic(time_array, potential_array, eta_0, beta_rel,
 
     # Taking every second point, in single RF the consecutive points
     # can be too close to each other for cubic spline interpolation
-    sorted_area = np.argsort(calc_area_scan[::2])
+    sorted_area = np.argsort(calc_area_scan)
 
     sync_freq[::2] = deriv_cubic(
-        calc_area_scan[::2][sorted_area],
-        hamiltonian_scan[::2][sorted_area])[1]
+        calc_area_scan[sorted_area][::2],
+        hamiltonian_scan[sorted_area][::2])[1]
 
-    time_array_fs[::2] = time_array_ham[::2][sorted_area]
-    hamiltonian_scan_fs[::2] = hamiltonian_scan[::2][sorted_area]
-    calc_area_scan_fs[::2] = calc_area_scan[::2][sorted_area]
-    half_energy_height_scan_fs[::2] = half_energy_height_scan[::2][sorted_area]
-    full_length_time_scan_fs[::2] = full_length_time_scan[::2][sorted_area]
+    time_array_fs[::2] = time_array_ham[sorted_area][::2]
+    hamiltonian_scan_fs[::2] = hamiltonian_scan[sorted_area][::2]
+    calc_area_scan_fs[::2] = calc_area_scan[sorted_area][::2]
+    half_energy_height_scan_fs[::2] = half_energy_height_scan[sorted_area][::2]
+    full_length_time_scan_fs[::2] = full_length_time_scan[sorted_area][::2]
 
     # Doing the same with the second set of points
-    sorted_area = np.argsort(calc_area_scan[1::2])
-
+    
     sync_freq[1::2] = deriv_cubic(
-        calc_area_scan[1::2][sorted_area],
-        hamiltonian_scan[1::2][sorted_area])[1]
+        calc_area_scan[sorted_area][1::2],
+        hamiltonian_scan[sorted_area][1::2])[1]
 
-    time_array_fs[1::2] = time_array_ham[1::2][sorted_area]
-    hamiltonian_scan_fs[1::2] = hamiltonian_scan[1::2][sorted_area]
-    calc_area_scan_fs[1::2] = calc_area_scan[1::2][sorted_area]
-    half_energy_height_scan_fs[1::2] = half_energy_height_scan[1::2][
-        sorted_area]
-    full_length_time_scan_fs[1::2] = full_length_time_scan[1::2][sorted_area]
+    time_array_fs[1::2] = time_array_ham[sorted_area][1::2]
+    hamiltonian_scan_fs[1::2] = hamiltonian_scan[sorted_area][1::2]
+    calc_area_scan_fs[1::2] = calc_area_scan[sorted_area][1::2]
+    half_energy_height_scan_fs[1::2] = half_energy_height_scan[sorted_area][1::2]
+    full_length_time_scan_fs[1::2] = full_length_time_scan[sorted_area][1::2]
 
     sorted_time = np.argsort(time_array_fs)
 
